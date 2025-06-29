@@ -33,9 +33,11 @@ Before running this script, ensure the following are installed on your Debian/Ub
 **Make Executable**:  
 sudo chmod \+x /usr/local/bin/phpmyadmin_update.sh
 
-2. **Run the Script**:  
+2. **Run the Script**:
+   
    The script accepts optional parameters:  
-   `sudo /usr/local/bin/phpmyadmin_update.sh [PMA_INSTALL_DIR] [MYSQL_HOST] [MYSQL_ROOT_PASSWORD]`  
+   `sudo /usr/local/bin/phpmyadmin_update.sh [PMA_INSTALL_DIR] [MYSQL_HOST] [MYSQL_ROOT_PASSWORD]`
+
    * **`PMA_INSTALL_DIR` (Optional)**: The directory where phpMyAdmin will be installed.  
      * Default: `/var/www/phpmyadmin`  
      * Example: `/usr/share/phpmyadmin`  
@@ -84,15 +86,14 @@ Explanation:
   * `*`: Month (1-12)  
   * `0`: Day of week (0-7, where 0 and 7 are Sunday)  
   * `/usr/local/bin/phpmyadmin_update.sh`: Path to your script.  
-  * `>> /var/log/phpmyadmin_cron.log 2>&1`: Redirects all standard output and errors to a separate cron log file, preve  
-    nting email notifications from cron and allowing you to review the scheduled run's output.
+  * `>> /var/log/phpmyadmin_cron.log 2>&1`: Redirects all standard output and errors to a separate cron log file, preventing email notifications from cron and allowing you to review the scheduled run's output.
 
   **Important Considerations for Cron and Passwords**:
 
   * If your `MYSQL_ROOT_PASSWORD` is hardcoded in the script, ensure the script's permissions are strictly set to `600` (`chmod 600`) as mentioned in the "MySQL Root Password Handling" section.  
   * **Do NOT** include the MySQL root password directly in the cron entry. The script's internal password handling (hardcoded, environment variable, or interactive prompt) will manage this. Since cron jobs run non-interactively, if the password is not hardcoded or passed via environment variable, the script will **fail** to prompt for it and will abort. Therefore, for cron, either hardcode the password (with strict permissions) or ensure `MYSQL_ROOT_PASSWORD` is available in the cron job's environment (e.g., by sourcing a file that sets it, though hardcoding in the script is simpler for cron).
 
-  **Save and Exit**: Save the `crontab` file (usually `Ctrl+X`, then `Y`, then `Enter` in `nano`).
+  **Save and Exit**: Save the `crontab` file (usually `Ctrl+X`, then `Y`, then `Enter` in `nano`; Escape :wq Enter in vim)
 
 ## **MySQL Root Password Handling**
 
