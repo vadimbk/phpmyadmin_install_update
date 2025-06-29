@@ -28,15 +28,14 @@ Before running this script, ensure the following are installed on your Debian/Ub
 
 ## **Usage**
 
-1. **Save the Script**: Save the script content to a file, for example, `/usr/local/bin/phpmyadmin.sh`.
+1. **Save the Script**: Save the script content to a file, for example, `/usr/local/bin/phpmyadmin_update.sh`.
 
 **Make Executable**:  
-sudo chmod \+x /usr/local/bin/phpmyadmin.sh
+sudo chmod \+x /usr/local/bin/phpmyadmin_update.sh
 
-2.   
-3. **Run the Script**:  
+2. **Run the Script**:  
    The script accepts optional parameters:  
-   `sudo /usr/local/bin/phpmyadmin.sh [PMA_INSTALL_DIR] [MYSQL_HOST] [MYSQL_ROOT_PASSWORD]`  
+   `sudo /usr/local/bin/phpmyadmin_update.sh [PMA_INSTALL_DIR] [MYSQL_HOST] [MYSQL_ROOT_PASSWORD]`  
    * **`PMA_INSTALL_DIR` (Optional)**: The directory where phpMyAdmin will be installed.  
      * Default: `/var/www/phpmyadmin`  
      * Example: `/usr/share/phpmyadmin`  
@@ -48,22 +47,22 @@ sudo chmod \+x /usr/local/bin/phpmyadmin.sh
 ### **Examples:**
 
 **Default installation**:  
-sudo /usr/local/bin/phpmyadmin.sh
+sudo /usr/local/bin/phpmyadmin_update.sh
 
 (You will be prompted for the MySQL root password.)
 
 **Specify installation directory**:  
-sudo /usr/local/bin/phpmyadmin.sh /var/www/html/pma
+sudo /usr/local/bin/phpmyadmin_update.sh /var/www/html/pma
 
 **Specify MySQL host**:  
-sudo /usr/local/bin/phpmyadmin.sh /var/www/phpmyadmin 192.168.1.100
+sudo /usr/local/bin/phpmyadmin_update.sh /var/www/phpmyadmin 192.168.1.100
 
 **Provide MySQL root password via command-line argument**:  
-sudo /usr/local/bin/phpmyadmin.sh /var/www/phpmyadmin localhost MySecureRootPass123
+sudo /usr/local/bin/phpmyadmin_update.sh /var/www/phpmyadmin localhost MySecureRootPass123
 
 **Provide MySQL root password via environment variable**:  
 export MYSQL\_ROOT\_PASSWORD="MySecureRootPass123"  
-sudo /usr/local/bin/phpmyadmin.sh
+sudo /usr/local/bin/phpmyadmin_update.sh
 
 (Remember to `unset MYSQL_ROOT_PASSWORD` after execution for security.)
 
@@ -84,7 +83,7 @@ Explanation:
   * `*`: Day of month (1-31)  
   * `*`: Month (1-12)  
   * `0`: Day of week (0-7, where 0 and 7 are Sunday)  
-  * `/usr/local/bin/phpmyadmin.sh`: Path to your script.  
+  * `/usr/local/bin/phpmyadmin_update.sh`: Path to your script.  
   * `>> /var/log/phpmyadmin_cron.log 2>&1`: Redirects all standard output and errors to a separate cron log file, preve  
     nting email notifications from cron and allowing you to review the scheduled run's output.
 
@@ -107,11 +106,11 @@ The script requires the MySQL `root` password to perform critical database opera
 The script attempts to obtain the MySQL `root` password in the following order of precedence:
 
 1. **Hardcoded in the script**: If you uncomment and set the `MYSQL_ROOT_PASSWORD` variable at the very top of the script file.  
-   * **Security Note**: Using this method is generally discouraged for production environments as the password is plain text in the file. If you use it, the script attempts to set `chmod 600` on itself to restrict access, but you should double-check and manually enforce strict permissions (`sudo chmod 600 /usr/local/bin/phpmyadmin.sh`) to ensure only the `root` user can read/write it.  
+   * **Security Note**: Using this method is generally discouraged for production environments as the password is plain text in the file. If you use it, the script attempts to set `chmod 600` on itself to restrict access, but you should double-check and manually enforce strict permissions (`sudo chmod 600 /usr/local/bin/phpmyadmin_update.sh`) to ensure only the `root` user can read/write it.  
 2. **Command-line argument**: If provided as the third argument when executing the script.  
-   * Example: `sudo ./phpmyadmin.sh /var/www/phpmyadmin localhost MyPassword`  
+   * Example: `sudo ./phpmyadmin_update.sh /var/www/phpmyadmin localhost MyPassword`  
 3. **Environment variable**: If the `MYSQL_ROOT_PASSWORD` environment variable is exported before running the script.  
-   * Example: `export MYSQL_ROOT_PASSWORD="MyPassword"; sudo ./phpmyadmin.sh`  
+   * Example: `export MYSQL_ROOT_PASSWORD="MyPassword"; sudo ./phpmyadmin_update.sh`  
 4. **Interactive prompt**: If the password is not found through any of the above methods, the script will interactively prompt you to enter it.  
    * You will have up to **3 attempts** to enter the correct password. This helps prevent accidental typos (e.g., wrong keyboard layout or CapsLock). If all attempts fail, the script will abort.
 
