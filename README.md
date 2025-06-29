@@ -13,7 +13,7 @@ This Bash script automates the process of installing or updating phpMyAdmin on a
   * Grants the `pma_admin` user the necessary privileges on the `phpmyadmin` database.  
   * Imports phpMyAdmin's control tables (`create_tables.sql`) into the `phpmyadmin` database, but only if they don't already exist.  
 * **`config.inc.php` Configuration**: Automatically sets `blowfish_secret`, MySQL host, and configures the control user (`pma_admin`) for phpMyAdmin's advanced features (e.g., bookmarks, history).  
-* **Permission Management**: Sets appropriate ownership (`www-data:www-data`) and file permissions (`755` for directories, `644` for files) for the phpMyAdmin installation.  
+* **Permission Management**: Sets appropriate ownership (`www-data:www-data`) and file permissions (`755` for directories, `644` for files) for the phpMyAdmin installation.  You can change it easily.
 * **Logging**: All actions and errors are logged to `/var/log/update-phpmyadmin.log`.
 
 ## **Prerequisites**
@@ -75,7 +75,7 @@ You can schedule this script to run automatically at regular intervals (e.g., we
 sudo crontab \-e
 
 **Add a Cron Job Entry**: Add the following line to the end of the file. This example schedules the script to run every Sunday at midnight (00:00).  
-0 0 \* \* 0 /usr/local/bin/phpmyadmin.sh \>\> /var/log/phpmyadmin\_cron.log 2\>&1
+0 0 \* \* 0 /usr/local/bin/phpmyadmin_install_update.sh \>\> /var/log/phpmyadmin\_cron.log 2\>&1
 
 Explanation:
 
