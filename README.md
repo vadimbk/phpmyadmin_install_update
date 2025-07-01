@@ -79,7 +79,7 @@ Before running this script, ensure the following are installed on your Debian/Ub
 
 ### Examples:
 
-* **Default installation (will prompt for password, using `root` on `localhost`)**:
+* **Default installation (will prompt for MySQL root password)**:
 
     ```bash
     sudo /usr/local/bin/phpmyadmin.sh
