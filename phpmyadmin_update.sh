@@ -1,12 +1,14 @@
 #!/bin/bash
 
-# --- MySQL Root Password (Optional Hardcoded Variable) ---
-# If you want to hardcode the MySQL root password directly in this script,
-# uncomment the line below and replace 'your_mysql_root_password_here' with your actual password.
+# --- MySQL Administrative User and Password (Optional Hardcoded Variables) ---
+# If you want to hardcode the MySQL administrative user and password directly in this script,
+# uncomment the lines below and replace them with your actual administrative username and password.
+# This user MUST have privileges to CREATE DATABASE, CREATE USER, GRANT PRIVILEGES.
 # !!! IMPORTANT: If you use this, YOU MUST ensure this script file (e.g., /usr/local/bin/phpmyadmin.sh)
 # has very strict permissions (e.g., 'chmod 600 /usr/local/bin/phpmyadmin.sh') to prevent unauthorized access.
-# The script will attempt to set these permissions if this variable is used.
-MYSQL_ROOT_PASSWORD="" # Set your password here, e.g., "myStrongRootPass"
+# The script will attempt to set these permissions if MYSQL_ADMIN_PASSWORD is hardcoded.
+MYSQL_ADMIN_USER_HARDCODED="" # Set your admin username here, e.g., "my_mysql_admin". Leave empty if you don't want to hardcode.
+MYSQL_ADMIN_PASSWORD_HARDCODED="" # Set your admin password here, e.g., "myStrongAdminPass".
 
 
 # Configuration variables
@@ -20,7 +22,7 @@ TEMP_DIR="/tmp/phpmyadmin_update_temp_$(date +%s)_$$"
 # phpMyAdmin Control Database and User Configuration
 PMA_CONTROL_DB="phpmyadmin"
 PMA_CONTROL_USER="pma_admin"
-PMA_CONTROL_HOST="localhost"
+PMA_CONTROL_HOST="localhost" # User will be 'pma_admin'@'localhost' by default
 PMA_CONTROL_PASSWORD=""
 
 # --- Functions ---
@@ -29,19 +31,23 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
 }
 
+# Function to execute MySQL query as the administrative user
+# Returns 0 on success, 1 on failure
 execute_mysql_query() {
     local query="$1"
-    log "Executing MySQL query: $query"
-    if ! mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "$query" 2>> "$LOG_FILE"; then
+    log "Executing MySQL query as '${MYSQL_ADMIN_USER}' on '${PMA_MYSQL_HOST}': $query"
+    if ! mysql -h "${PMA_MYSQL_HOST}" -u "${MYSQL_ADMIN_USER}" -p"${MYSQL_ADMIN_PASSWORD}" -e "$query" 2>> "$LOG_FILE"; then
         log "Error: MySQL query failed. See $LOG_FILE for details."
         return 1
     fi
     return 0
 }
 
+# Function to execute MySQL query as the administrative user and capture output
+# Returns the output string on success, empty string on failure or no output
 execute_mysql_query_capture() {
     local query="$1"
-    local output=$(mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -s -N -e "$query" 2>> "$LOG_FILE")
+    local output=$(mysql -h "${PMA_MYSQL_HOST}" -u "${MYSQL_ADMIN_USER}" -p"${MYSQL_ADMIN_PASSWORD}" -s -N -e "$query" 2>> "$LOG_FILE")
     if [ $? -ne 0 ]; then
         log "Error: MySQL query failed during capture attempt. See $LOG_FILE for details."
         return 1
@@ -50,11 +56,13 @@ execute_mysql_query_capture() {
     return 0
 }
 
+# Function to import SQL file into a MySQL database as the administrative user
+# Returns 0 on success, 1 on failure
 import_mysql_sql_file() {
     local db_name="$1"
     local sql_file="$2"
-    log "Importing SQL file '$sql_file' into database '$db_name'..."
-    if ! mysql -u root -p"${MYSQL_ROOT_PASSWORD}" "$db_name" < "$sql_file" 2>> "$LOG_FILE"; then
+    log "Importing SQL file '$sql_file' into database '$db_name' as '${MYSQL_ADMIN_USER}' on '${PMA_MYSQL_HOST}'..."
+    if ! mysql -h "${PMA_MYSQL_HOST}" -u "${MYSQL_ADMIN_USER}" -p"${MYSQL_ADMIN_PASSWORD}" "$db_name" < "$sql_file" 2>> "$LOG_FILE"; then
         log "Error: Failed to import SQL file '$sql_file' into '$db_name'. See $LOG_FILE for details."
         return 1
     fi
@@ -67,88 +75,103 @@ import_mysql_sql_file() {
 log "--- Starting phpMyAdmin update script ---"
 
 # Track password origin to determine if it should be unset later
-_MYSQL_ROOT_PASSWORD_ORIGIN_=""
+_MYSQL_ADMIN_PASSWORD_ORIGIN_=""
 
-# If MYSQL_ROOT_PASSWORD is set directly in this script, it has highest priority
-if [ -n "${MYSQL_ROOT_PASSWORD}" ]; then
-    _MYSQL_ROOT_PASSWORD_ORIGIN_="HARDCODED"
-    log "Using hardcoded MySQL root password from script variable."
+# 1. Determine MySQL administrative username
+if [ -n "${MYSQL_ADMIN_USER_HARDCODED}" ]; then
+    MYSQL_ADMIN_USER="${MYSQL_ADMIN_USER_HARDCODED}"
+    log "Using hardcoded MySQL administrative username: ${MYSQL_ADMIN_USER}."
+else
+    # Argument 3: MySQL administrative username (if provided)
+    if [ -n "$3" ]; then
+        MYSQL_ADMIN_USER="$3"
+        log "Using MySQL administrative username from command-line argument: ${MYSQL_ADMIN_USER}."
+    else
+        MYSQL_ADMIN_USER="root" # Default to 'root'
+        log "MySQL administrative username not specified, defaulting to: ${MYSQL_ADMIN_USER}."
+    fi
+fi
+
+# 2. Determine MySQL administrative password
+# If password is hardcoded in the script, it has the highest priority
+if [ -n "${MYSQL_ADMIN_PASSWORD_HARDCODED}" ]; then
+    MYSQL_ADMIN_PASSWORD="${MYSQL_ADMIN_PASSWORD_HARDCODED}"
+    _MYSQL_ADMIN_PASSWORD_ORIGIN_="HARDCODED"
+    log "Using hardcoded MySQL administrative password from script variable."
     # Set script file permissions if hardcoded password is used
     SCRIPT_PATH="$(readlink -f "$0")"
-    log "Hardcoded MySQL root password detected. Setting script permissions to 600 for '$SCRIPT_PATH'."
+    log "Hardcoded MySQL administrative password detected. Setting script permissions to 600 for '$SCRIPT_PATH'."
     chmod 600 "$SCRIPT_PATH" || log "Warning: Failed to set permissions for '$SCRIPT_PATH' to 600. Ensure this file is protected for security reasons."
+else
+    # Argument 4: MySQL administrative password (if provided)
+    if [ -n "$4" ]; then
+        MYSQL_ADMIN_PASSWORD="$4"
+        _MYSQL_ADMIN_PASSWORD_ORIGIN_="ARGUMENT"
+        log "Using MySQL administrative password from command-line argument."
+    elif [ -n "${MYSQL_ADMIN_PASSWORD}" ]; # Check environment variable
+        _MYSQL_ADMIN_PASSWORD_ORIGIN_="ENVIRONMENT"
+        log "MYSQL_ADMIN_PASSWORD environment variable is set. Attempting validation."
+    else
+        _MYSQL_ADMIN_PASSWORD_ORIGIN_="INTERACTIVE"
+        log "Administrative password not provided via script variable, argument, or environment. Will prompt interactively."
+    fi
 fi
 
 
 PMA_DIR="${1:-$PMA_DIR_DEFAULT}"
-PMA_MYSQL_HOST="localhost"
+PMA_MYSQL_HOST="localhost" # Default MySQL host for phpMyAdmin connection and admin user connection
 
 if [ -n "$2" ]; then
     PMA_MYSQL_HOST="$2"
     log "Using provided MySQL host parameter: $PMA_MYSQL_HOST"
 fi
 
-# Determine MySQL root password, with priority: hardcoded (already checked), arg, env, interactive
-if [ -z "${MYSQL_ROOT_PASSWORD}" ]; then # Only proceed if it wasn't hardcoded
-    if [ -n "$3" ]; then
-        MYSQL_ROOT_PASSWORD="$3"
-        _MYSQL_ROOT_PASSWORD_ORIGIN_="ARGUMENT"
-        log "Using MySQL root password from command-line argument."
-    elif [ -n "${MYSQL_ROOT_PASSWORD}" ]; then # This will check the environment variable now
-        _MYSQL_ROOT_PASSWORD_ORIGIN_="ENVIRONMENT"
-        log "MYSQL_ROOT_PASSWORD environment variable is set. Will attempt validation."
-    else
-        _MYSQL_ROOT_PASSWORD_ORIGIN_="INTERACTIVE"
-        log "No password provided via script variable, argument, or environment. Will prompt interactively."
-    fi
-fi
 
-# Validate MySQL root password, with up to 3 interactive attempts if needed
+# Validate MySQL administrative password, with up to 3 interactive attempts if needed
 ATTEMPTS=0
 MAX_ATTEMPTS=3
 PASSWORD_VALIDATED=false
 
-# Only prompt if password is not already determined (or for subsequent interactive attempts)
 while [ "$ATTEMPTS" -lt "$MAX_ATTEMPTS" ]; do
-    # Only prompt if password is empty AND it was not hardcoded or passed as an argument initially
-    if [ -z "$MYSQL_ROOT_PASSWORD" ] && { [ "$_MYSQL_ROOT_PASSWORD_ORIGIN_" == "INTERACTIVE" ] || [ "$_MYSQL_ROOT_PASSWORD_ORIGIN_" == "ENVIRONMENT" -a "$ATTEMPTS" -gt 0 ]; }; then
-        echo "Please enter the MySQL root password (Attempt $((ATTEMPTS+1)) of $MAX_ATTEMPTS): "
-        read -s MYSQL_ROOT_PASSWORD
+    # Prompt for password only if it's empty AND it was not hardcoded or passed as an argument initially
+    if [ -z "$MYSQL_ADMIN_PASSWORD" ] && { [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "INTERACTIVE" ] || [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "ENVIRONMENT" -a "$ATTEMPTS" -gt 0 ]; }; then
+        echo "Please enter the MySQL administrative password for user '${MYSQL_ADMIN_USER}' on host '${PMA_MYSQL_HOST}' (Attempt $((ATTEMPTS+1)) of $MAX_ATTEMPTS): "
+        read -s MYSQL_ADMIN_PASSWORD
         echo
-        if [ -z "${MYSQL_ROOT_PASSWORD}" ]; then
-            log "Warning: MySQL root password was not provided during interactive prompt."
+        if [ -z "${MYSQL_ADMIN_PASSWORD}" ]; then
+            log "Warning: MySQL administrative password was not provided during interactive prompt."
             ATTEMPTS=$((ATTEMPTS+1))
             continue
         fi
     fi
 
     # If the password is still empty after prompting, and it was supposed to be interactive, exit.
-    if [ -z "$MYSQL_ROOT_PASSWORD" ] && [ "$_MYSQL_ROOT_PASSWORD_ORIGIN_" == "INTERACTIVE" ]; then
-        log "Error: MySQL root password was not provided. Aborting."
+    if [ -z "$MYSQL_ADMIN_PASSWORD" ] && [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "INTERACTIVE" ]; then
+        log "Error: MySQL administrative password was not provided. Aborting."
         exit 1
     fi
 
-    log "Validating MySQL root password..."
-    if mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1;" > /dev/null 2>&1; then
-        log "MySQL root password validated successfully."
+    log "Validating MySQL administrative password for user '${MYSQL_ADMIN_USER}' on host '${PMA_MYSQL_HOST}'..."
+    if mysql -h "${PMA_MYSQL_HOST}" -u "${MYSQL_ADMIN_USER}" -p"${MYSQL_ADMIN_PASSWORD}" -e "SELECT 1;" > /dev/null 2>&1; then
+        log "MySQL administrative password validated successfully."
         PASSWORD_VALIDATED=true
         break
     else
-        log "Error: Invalid MySQL root password. Attempt $((ATTEMPTS+1)) failed."
+        log "Error: Invalid MySQL administrative password for user '${MYSQL_ADMIN_USER}' on host '${PMA_MYSQL_HOST}'. Attempt $((ATTEMPTS+1)) failed."
         ATTEMPTS=$((ATTEMPTS+1))
         # Clear password only if it was obtained via environment or interactively for subsequent attempts
-        if [ "$_MYSQL_ROOT_PASSWORD_ORIGIN_" == "ENVIRONMENT" ] || [ "$_MYSQL_ROOT_PASSWORD_ORIGIN_" == "INTERACTIVE" ]; then
-            MYSQL_ROOT_PASSWORD=""
+        if [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "ENVIRONMENT" ] || [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "INTERACTIVE" ]; then
+            MYSQL_ADMIN_PASSWORD=""
         fi
         if [ "$ATTEMPTS" -eq "$MAX_ATTEMPTS" ]; then
-            log "Error: Maximum attempts reached. Unable to validate MySQL root password. Aborting."
+            log "Error: Maximum attempts reached. Unable to validate MySQL administrative password. Aborting."
             exit 1
         fi
     fi
 done
 
 if [ "$PASSWORD_VALIDATED" = false ]; then
-    log "Error: MySQL root password could not be validated after $MAX_ATTEMPTS attempts. Aborting."
+    log "Error: MySQL administrative password could not be validated after $MAX_ATTEMPTS attempts. Aborting."
     exit 1
 fi
 
@@ -191,10 +214,10 @@ if [ "$LATEST_VERSION" = "$INSTALLED_VERSION" ] && [ -d "$PMA_DIR/libraries" ] &
     log "phpMyAdmin is already up to date ($LATEST_VERSION) and configured. No full update needed."
     log "--- phpMyAdmin update script finished ---"
     
-    # Unset MYSQL_ROOT_PASSWORD if it was not hardcoded in script or passed as argument
-    if [ "$_MYSQL_ROOT_PASSWORD_ORIGIN_" == "ENVIRONMENT" ] || [ "$_MYSQL_ROOT_PASSWORD_ORIGIN_" == "INTERACTIVE" ]; then
-        unset MYSQL_ROOT_PASSWORD
-        log "MYSQL_ROOT_PASSWORD unset for this script's environment."
+    # Unset MYSQL_ADMIN_PASSWORD if it was not hardcoded in script or passed as argument
+    if [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "ENVIRONMENT" ] || [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "INTERACTIVE" ]; then
+        unset MYSQL_ADMIN_PASSWORD
+        log "MYSQL_ADMIN_PASSWORD unset for this script's environment."
     fi
     exit 0
 fi
@@ -382,10 +405,10 @@ log "Cleaning up temporary directory: "$TEMP_DIR" and old backup: "$PMA_DIR".bak
 rm -rf "$TEMP_DIR"
 rm -rf "$PMA_DIR.bak"
 
-# Unset MYSQL_ROOT_PASSWORD if it was not hardcoded in script or passed as argument
-if [ "$_MYSQL_ROOT_PASSWORD_ORIGIN_" == "ENVIRONMENT" ] || [ "$_MYSQL_ROOT_PASSWORD_ORIGIN_" == "INTERACTIVE" ]; then
-    unset MYSQL_ROOT_PASSWORD
-    log "MYSQL_ROOT_PASSWORD unset for this script's environment."
+# Unset MYSQL_ADMIN_PASSWORD if it was not hardcoded in script or passed as argument
+if [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "ENVIRONMENT" ] || [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "INTERACTIVE" ]; then
+    unset MYSQL_ADMIN_PASSWORD
+    log "MYSQL_ADMIN_PASSWORD unset for this script's environment."
 fi
 
 log "--- phpMyAdmin update script finished ---"
