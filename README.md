@@ -1,139 +1,217 @@
-# **Automated phpMyAdmin Installer and Updater**
+# Automated phpMyAdmin Installer and Updater
 
-This Bash script automates the process of installing or updating phpMyAdmin on a Debian/Ubuntu-based web server. It handles downloading the latest version, verifying checksums, configuring the web directory, setting up the necessary MySQL database and user for phpMyAdmin's control features, and managing file permissions.
+This Bash script automates the process of installing or updating phpMyAdmin on a Debian/Ubuntu-based web server. It handles downloading the latest version, verifying checksums, configuring the web directory, setting up necessary MySQL database and user for phpMyAdmin's control features, and managing file permissions.
 
-## **Features**
+## Features
 
-* **Automatic Latest Version Download**: Fetches the latest stable phpMyAdmin release directly from `phpmyadmin.net`.  
-* **SHA256 Checksum Verification**: Ensures the integrity and authenticity of the downloaded archive.  
-* **Atomic Installation/Update**: Replaces the old phpMyAdmin installation with the new one safely by creating a temporary backup.  
-* **Automated MySQL Setup**:  
-  * Creates a dedicated `phpmyadmin` database if it doesn't exist.  
-  * Creates or updates a specific control user (`pma_admin`) with a strong, automatically generated password.  
-  * Grants the `pma_admin` user the necessary privileges on the `phpmyadmin` database.  
-  * Imports phpMyAdmin's control tables (`create_tables.sql`) into the `phpmyadmin` database, but only if they don't already exist.  
-* **`config.inc.php` Configuration**: Automatically sets `blowfish_secret`, MySQL host, and configures the control user (`pma_admin`) for phpMyAdmin's advanced features (e.g., bookmarks, history).  
-* **Permission Management**: Sets appropriate ownership (`www-data:www-data`) and file permissions (`755` for directories, `644` for files) for the phpMyAdmin installation.  You can change it easily.
-* **Logging**: All actions and errors are logged to `/var/log/update-phpmyadmphpmyadmin.shin.log`.
+* **Automatic Latest Version Download**: Fetches the latest stable phpMyAdmin release directly from `phpmyadmin.net`.
 
-## **Prerequisites**
+* **SHA256 Checksum Verification**: Ensures the integrity and authenticity of the downloaded archive.
+
+* **Atomic Installation/Update**: Replaces the old phpMyAdmin installation with the new one safely by creating a temporary backup.
+
+* **Automated MySQL Setup**:
+
+    * Creates a dedicated `phpmyadmin` database if it doesn't exist.
+
+    * Creates or updates a specific control user (`pma_admin`) with a strong, automatically generated password.
+
+    * Grants the `pma_admin` user the necessary privileges on the `phpmyadmin` database.
+
+    * Imports phpMyAdmin's control tables (`create_tables.sql`) into the `phpmyadmin` database, but only if they don't already exist.
+
+* **`config.inc.php` Configuration**: Automatically sets `blowfish_secret`, MySQL host, and configures the control user (`pma_admin`) for phpMyAdmin's advanced features (e.g., bookmarks, history).
+
+* **Permission Management**: Sets appropriate ownership (`www-data:www-data`) and file permissions (`755` for directories, `644` for files) for the phpMyAdmin installation.
+
+* **Logging**: All actions and errors are logged to `/var/log/update-phpmyadmin.log`.
+
+## Prerequisites
 
 Before running this script, ensure the following are installed on your Debian/Ubuntu system:
 
-* `wget`: For downloading files.  
-* `unzip`: For extracting the phpMyAdmin archive.  
-* `mysql-client`: The MySQL client utilities (required for `mysql` command).  
-* `openssl`: For generating random passwords and `blowfish_secret`.  
+* `wget`: For downloading files.
+
+* `unzip`: For extracting the phpMyAdmin archive.
+
+* `mysql-client`: The MySQL client utilities (required for `mysql` command).
+
+* `openssl`: For generating random passwords and `blowfish_secret`.
+
 * `php-mbstring` (and other PHP extensions required by phpMyAdmin, e.g., `php-mysqli`, `php-json`, `php-gd`, `php-zip`, `php-curl`, `php-xml`): Ensure your PHP installation has these extensions enabled. While the script doesn't install them, they are crucial for phpMyAdmin's functionality.
 
-## **Usage**
+## Usage
 
-1. **Save the Script**: Save the script content to a file, for example, `/usr/local/bin/phpmyadmin_update.sh`.
+1.  **Save the Script**:
+    Save the script content to a file, for example, `/usr/local/bin/phpmyadmin.sh`.
 
-**Make Executable**:  
-sudo chmod \+x /usr/local/bin/phpmyadmin_update.sh
+2.  **Make Executable**:
 
-2. **Run the Script**:
-   
-   The script accepts optional parameters:  
-   `sudo /usr/local/bin/phpmyadmin_update.sh [PMA_INSTALL_DIR] [MYSQL_HOST] [MYSQL_ROOT_PASSWORD]`
+    ```bash
+    sudo chmod +x /usr/local/bin/phpmyadmin.sh
+    ```
 
-   * **`PMA_INSTALL_DIR` (Optional)**: The directory where phpMyAdmin will be installed.  
-     * Default: `/var/www/phpmyadmin`  
-     * Example: `/usr/share/phpmyadmin`  
-   * **`MYSQL_HOST` (Optional)**: The MySQL host to configure in phpMyAdmin's `config.inc.php`.  
-     * Default: `localhost`  
-     * Example: `127.0.0.1`  
-   * **`MYSQL_ROOT_PASSWORD` (Optional)**: The MySQL `root` user's password. See "MySQL Root Password Handling" below for detailed explanation of how the script obtains this password.
+3.  **Run the Script**:
 
-### **Examples:**
+    The script accepts optional parameters:
 
-**Default installation**:  
-sudo /usr/local/bin/phpmyadmin_update.sh
+    `sudo /usr/local/bin/phpmyadmin.sh [PMA_INSTALL_DIR] [MYSQL_HOST] [MYSQL_ADMIN_USER] [MYSQL_ADMIN_PASSWORD]`
 
-(You will be prompted for the MySQL root password.)
+    * **`PMA_INSTALL_DIR` (Optional)**: The directory where phpMyAdmin will be installed.
 
-**Specify installation directory**:  
-sudo /usr/local/bin/phpmyadmin_update.sh /var/www/html/pma
+        * Default: `/var/www/phpmyadmin`
 
-**Specify MySQL host**:  
-sudo /usr/local/bin/phpmyadmin_update.sh /var/www/phpmyadmin 192.168.1.100
+        * Example: `/usr/share/phpmyadmin`
 
-**Provide MySQL root password via command-line argument**:  
-sudo /usr/local/bin/phpmyadmin_update.sh /var/www/phpmyadmin localhost MySecureRootPass123
+    * **`MYSQL_HOST` (Optional)**: The MySQL host to configure in phpMyAdmin's `config.inc.php`. This is also the host the script will attempt to connect to for MySQL administrative operations.
 
-**Provide MySQL root password via environment variable**:  
-export MYSQL\_ROOT\_PASSWORD="MySecureRootPass123"  
-sudo /usr/local/bin/phpmyadmin_update.sh
+        * Default: `localhost`
 
-(Remember to `unset MYSQL_ROOT_PASSWORD` after execution for security.)
+        * Example: `127.0.0.1` or `my.remote.mysql.server`
 
-### **Scheduling with Cron**
+    * **`MYSQL_ADMIN_USER` (Optional)**: The username for the MySQL administrative user.
+
+        * Default: `root` (if not specified via hardcoded variable or this argument).
+
+        * This parameter takes precedence over the default `root` user.
+
+    * **`MYSQL_ADMIN_PASSWORD` (Optional)**: The password for the MySQL administrative user (`MYSQL_ADMIN_USER`). See "MySQL Administrative User and Password Handling" below for detailed explanation of how the script obtains this password.
+
+### Examples:
+
+* **Default installation (will prompt for password, using `root` on `localhost`)**:
+
+    ```bash
+    sudo /usr/local/bin/phpmyadmin.sh
+    ```
+
+* **Specify installation directory**:
+
+    ```bash
+    sudo /usr/local/bin/phpmyadmin.sh /var/www/html/pma
+    ```
+
+* **Specify MySQL host (e.g., a remote container/VM)**:
+
+    ```bash
+    sudo /usr/local/bin/phpmyadmin.sh /var/www/phpmyadmin 192.168.1.100
+    ```
+
+* **Provide MySQL administrative user and password via command-line arguments**:
+
+    ```bash
+    sudo /usr/local/bin/phpmyadmin.sh /var/www/phpmyadmin localhost my_admin_user MySecureAdminPass123
+    ```
+
+* **Provide MySQL administrative password via environment variable (using default `root` user)**:
+
+    ```bash
+    export MYSQL_ADMIN_PASSWORD="MySecureAdminPass123"
+    sudo /usr/local/bin/phpmyadmin.sh
+    ```
+
+    (Remember to `unset MYSQL_ADMIN_PASSWORD` after execution for security.)
+
+* **Using a non-root administrative user hardcoded in the script**:
+    First, edit the script directly to set `MYSQL_ADMIN_USER_HARDCODED="my_admin_user"` at the top. Then run:
+    ```bash
+    sudo /usr/local/bin/phpmyadmin.sh /var/www/phpmyadmin my.remote.mysql.server MySecureAdminPass123
+    ```
+    (Replace `MySecureAdminPass123` with the actual password for `my_admin_user`.)
+
+### Scheduling with Cron
 
 You can schedule this script to run automatically at regular intervals (e.g., weekly) using `cron`. This ensures your phpMyAdmin installation stays up-to-date.
 
-**Open Crontab**: Open your `cron` table for editing. If you are scheduling this script to run as `root` (which is necessary for the MySQL operations), use `sudo crontab -e`.  
-sudo crontab \-e
+1.  **Open Crontab**:
+    Open your `cron` table for editing. If you are scheduling this script to run as `root` (which is necessary for the MySQL operations), use `sudo crontab -e`.
 
-**Add a Cron Job Entry**: Add the following line to the end of the file. This example schedules the script to run every Sunday at midnight (00:00).  
-0 0 \* \* 0 /usr/local/bin/phpmyadmin_update.sh \>\> /var/log/phpmyadmin\_cron.log 2\>&1
+    ```bash
+    sudo crontab -e
+    ```
 
-Explanation:
+2.  **Add a Cron Job Entry**:
+    Add the following line to the end of the file. This example schedules the script to run every Sunday at midnight (00:00).
 
-* `0`: Minute (0-59)  
-  * `0`: Hour (0-23)  
-  * `*`: Day of month (1-31)  
-  * `*`: Month (1-12)  
-  * `0`: Day of week (0-7, where 0 and 7 are Sunday)  
-  * `/usr/local/bin/phpmyadmin_update.sh`: Path to your script.  
-  * `>> /var/log/phpmyadmin_cron.log 2>&1`: Redirects all standard output and errors to a separate cron log file, preventing email notifications from cron and allowing you to review the scheduled run's output.
+    ```cron
+    0 0 * * 0 /usr/local/bin/phpmyadmin.sh >> /var/log/phpmyadmin_cron.log 2>&1
+    ```
 
-  **Important Considerations for Cron and Passwords**:
+    * `0`: Minute (0-59)
 
-  * If your `MYSQL_ROOT_PASSWORD` is hardcoded in the script, ensure the script's permissions are strictly set to `600` (`chmod 600`) as mentioned in the "MySQL Root Password Handling" section.  
-  * **Do NOT** include the MySQL root password directly in the cron entry. The script's internal password handling (hardcoded, environment variable, or interactive prompt) will manage this. Since cron jobs run non-interactively, if the password is not hardcoded or passed via environment variable, the script will **fail** to prompt for it and will abort. Therefore, for cron, either hardcode the password (with strict permissions) or ensure `MYSQL_ROOT_PASSWORD` is available in the cron job's environment (e.g., by sourcing a file that sets it, though hardcoding in the script is simpler for cron).
+    * `0`: Hour (0-23)
 
-  **Save and Exit**: Save the `crontab` file (usually `Ctrl+X`, then `Y`, then `Enter` in `nano`; Escape :wq Enter in vim)
+    * `*`: Day of month (1-31)
 
-## **MySQL Root Password Handling**
+    * `*`: Month (1-12)
 
-The script requires the MySQL `root` password to perform critical database operations:
+    * `0`: Day of week (0-7, where 0 and 7 are Sunday)
 
-* Creating the `phpmyadmin` control database.  
-* Creating or updating the `pma_admin` control user.  
-* Granting privileges to the `pma_admin` user.  
+    * `/usr/local/bin/phpmyadmin.sh`: Path to your script.
+
+    * `>> /var/log/phpmyadmin_cron.log 2>&1`: Redirects all standard output and errors to a separate cron log file, preventing email notifications from cron and allowing you to review the scheduled run's output.
+
+    **Important Considerations for Cron and Passwords**:
+
+    * If your `MYSQL_ADMIN_PASSWORD` is hardcoded in the script, ensure the script's permissions are strictly set to `600` (`chmod 600`) as mentioned in the "MySQL Administrative User and Password Handling" section.
+
+    * **Do NOT** include the MySQL administrative password directly in the cron entry. The script's internal password handling (hardcoded in script, environment variable, or interactive prompt) will manage this. Since cron jobs run non-interactively, if the password is not hardcoded or passed via environment variable, the script will **fail** to prompt for it and will abort. Therefore, for cron, either hardcode the password (with strict permissions) or ensure `MYSQL_ADMIN_PASSWORD` is available in the cron job's environment (e.g., by sourcing a file that sets it, though hardcoding in the script is simpler for cron).
+
+3.  **Save and Exit**:
+    Save the `crontab` file (usually `Ctrl+X`, then `Y`, then `Enter` in `nano`).
+
+## MySQL Administrative User and Password Handling
+
+The script requires a MySQL user with administrative privileges to perform critical database operations:
+
+* Creating the `phpmyadmin` control database.
+
+* Creating or updating the `pma_admin` control user.
+
+* Granting privileges to the `pma_admin` user.
+
 * Importing the necessary control tables.
 
-The script attempts to obtain the MySQL `root` password in the following order of precedence:
+The script attempts to obtain the MySQL administrative username and password in the following order of precedence:
 
-1. **Hardcoded in the script**: If you uncomment and set the `MYSQL_ROOT_PASSWORD` variable at the very top of the script file.  
-   * **Security Note**: Using this method is generally discouraged for production environments as the password is plain text in the file. If you use it, the script attempts to set `chmod 600` on itself to restrict access, but you should double-check and manually enforce strict permissions (`sudo chmod 600 /usr/local/bin/phpmyadmin_update.sh`) to ensure only the `root` user can read/write it.  
-2. **Command-line argument**: If provided as the third argument when executing the script.  
-   * Example: `sudo ./phpmyadmin_update.sh /var/www/phpmyadmin localhost MyPassword`  
-3. **Environment variable**: If the `MYSQL_ROOT_PASSWORD` environment variable is exported before running the script.  
-   * Example: `export MYSQL_ROOT_PASSWORD="MyPassword"; sudo ./phpmyadmin_update.sh`  
-4. **Interactive prompt**: If the password is not found through any of the above methods, the script will interactively prompt you to enter it.  
-   * You will have up to **3 attempts** to enter the correct password. This helps prevent accidental typos (e.g., wrong keyboard layout or CapsLock). If all attempts fail, the script will abort.
+**For Username (`MYSQL_ADMIN_USER`):**
+1.  **Hardcoded in the script**: If `MYSQL_ADMIN_USER_HARDCODED` is set at the very top of the script file.
+2.  **Command-line argument**: If provided as the third argument when executing the script.
+3.  **Default**: If not provided by the above methods, it defaults to `root`.
 
-### **Security Best Practices for Passwords:**
+**For Password (`MYSQL_ADMIN_PASSWORD`):**
+1.  **Hardcoded in the script**: If `MYSQL_ADMIN_PASSWORD_HARDCODED` is set at the very top of the script file.
+2.  **Command-line argument**: If provided as the fourth argument when executing the script.
+3.  **Environment variable**: If the `MYSQL_ADMIN_PASSWORD` environment variable is exported before running the script.
+4.  **Interactive prompt**: If the password is not found through any of the above methods, the script will interactively prompt you to enter it.
 
-* **Avoid hardcoding in production**: For maximum security, avoid hardcoding passwords directly in the script file.  
-* **Use environment variables temporarily**: If using environment variables, `unset` them immediately after the script completes to clear them from your shell's environment. The script attempts to `unset` the variable if it sourced it from the environment or interactively.  
+    * You will have up to **3 attempts** to enter the correct password. This helps prevent accidental typos (e.g., wrong keyboard layout or CapsLock). If all attempts fail, the script will abort.
+
+### Security Best Practices for Passwords:
+
+* **Avoid hardcoding in production**: For maximum security, avoid hardcoding passwords directly in the script file.
+
+* **Use environment variables temporarily**: If using environment variables, `unset` them immediately after the script completes to clear them from your shell's environment. The script attempts to `unset` the variable if it sourced it from the environment or interactively.
+
 * **Restrict script permissions**: Regardless of how you provide the password, always ensure your script file has strict permissions (`chmod 600`) if it contains sensitive information or you are running it as `root`.
 
-## **phpMyAdmin Control User (`pma_admin`)**
+## phpMyAdmin Control User (`pma_admin`)
 
 This script creates or updates a dedicated MySQL user named `pma_admin` (with `localhost` host) and a database named `phpmyadmin`. This user and database are essential for phpMyAdmin's advanced features, such as:
 
-* **User preferences storage**: Saving custom settings for each phpMyAdmin user.  
-* **Bookmark queries**: Storing frequently used SQL queries.  
-* **Relation transformations**: Defining relationships between tables.  
+* **User preferences storage**: Saving custom settings for each phpMyAdmin user.
+
+* **Bookmark queries**: Storing frequently used SQL queries.
+
+* **Relation transformations**: Defining relationships between tables.
+
 * **History**: Keeping a record of executed SQL commands.
 
 The `pma_admin` user's password is automatically generated by the script and securely stored within phpMyAdmin's `config.inc.php` file. If the `pma_admin` user already exists (e.g., from a previous manual setup or migration), the script will update its password to the newly generated one and configure `config.inc.php` accordingly to ensure consistency. The control tables (`create_tables.sql`) are imported only if the `phpmyadmin` database is empty.
 
-## **Logging**
+## Logging
 
-All script output, including actions performed and any errors encountered, is logged to: `/var/log/update-phpmyadmin.log`
+All script output, including actions performed and any errors encountered, is logged to:
+`/var/log/update-phpmyadmin.log`
 
 This file is useful for debugging and reviewing the script's execution history.
