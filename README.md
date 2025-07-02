@@ -40,6 +40,25 @@ Before running this script, ensure the following are installed on your Debian/Ub
 
 * `php-mbstring` (and other PHP extensions required by phpMyAdmin, e.g., `php-mysqli`, `php-json`, `php-gd`, `php-zip`, `php-curl`, `php-xml`): Ensure your PHP installation has these extensions enabled. While the script doesn't install them, they are crucial for phpMyAdmin's functionality.
 
+## Hardcoded Configuration Variables
+
+The script allows you to hardcode certain configuration parameters directly within the script file itself. Using these variables takes the highest precedence over values provided via command-line arguments or environment variables.
+
+**Important Security Note**: If you hardcode sensitive information like passwords, ensure the script file has very strict permissions (e.g., `chmod 600 /usr/local/bin/phpmyadmin.sh`) to prevent unauthorized access. The script attempts to set these permissions automatically if `MYSQL_ADMIN_PASSWORD_HARDCODED` is used.
+
+* **`MYSQL_ADMIN_USER_HARDCODED`**:
+    * Set your MySQL administrative username here (e.g., `"my_mysql_admin"`).
+    * Leave empty (`""`) if you prefer to provide the username via command-line argument or use the default (`root`).
+
+* **`MYSQL_ADMIN_PASSWORD_HARDCODED`**:
+    * Set your MySQL administrative password here (e.g., `"myStrongAdminPass"`).
+    * Leave empty (`""`) if you prefer to provide the password via command-line argument, environment variable, or interactive prompt.
+
+* **`PMA_MYSQL_HOST_HARDCODED`**:
+    * Set your MySQL host here (e.g., `"192.168.1.100"` or `"db.example.com"`).
+    * This will override any host provided via the command-line argument.
+    * Leave empty (`""`) if you prefer to provide the host via command-line argument or use the default (`localhost`).
+
 ## Usage
 
 1.  **Save the Script**:
@@ -64,18 +83,17 @@ Before running this script, ensure the following are installed on your Debian/Ub
         * Example: `/usr/share/phpmyadmin`
 
     * **`MYSQL_HOST` (Optional)**: The MySQL host to configure in phpMyAdmin's `config.inc.php`. This is also the host the script will attempt to connect to for MySQL administrative operations.
-
-        * Default: `localhost`
-
+        * **Note**: This argument is superseded by `PMA_MYSQL_HOST_HARDCODED` if that variable is set in the script.
+        * Default: `localhost` (if not specified via hardcoded variable or this argument).
         * Example: `127.0.0.1` or `my.remote.mysql.server`
 
     * **`MYSQL_ADMIN_USER` (Optional)**: The username for the MySQL administrative user.
-
+        * **Note**: This argument is superseded by `MYSQL_ADMIN_USER_HARDCODED` if that variable is set in the script.
         * Default: `root` (if not specified via hardcoded variable or this argument).
 
-        * This parameter takes precedence over the default `root` user.
-
-    * **`MYSQL_ADMIN_PASSWORD` (Optional)**: The password for the MySQL administrative user (`MYSQL_ADMIN_USER`). See "MySQL Administrative User and Password Handling" below for detailed explanation of how the script obtains this password.
+    * **`MYSQL_ADMIN_PASSWORD` (Optional)**: The password for the MySQL administrative user (`MYSQL_ADMIN_USER`).
+        * **Note**: This argument is superseded by `MYSQL_ADMIN_PASSWORD_HARDCODED` if that variable is set in the script.
+        * See "MySQL Administrative User and Password Handling" below for detailed explanation of how the script obtains this password.
 
 ### Examples:
 
@@ -112,12 +130,14 @@ Before running this script, ensure the following are installed on your Debian/Ub
 
     (Remember to `unset MYSQL_ADMIN_PASSWORD` after execution for security.)
 
-* **Using a non-root administrative user hardcoded in the script**:
-    First, edit the script directly to set `MYSQL_ADMIN_USER_HARDCODED="my_admin_user"` at the top. Then run:
+* **Using hardcoded variables in the script**:
+    Refer to the "Hardcoded Configuration Variables" section above for how to set `MYSQL_ADMIN_USER_HARDCODED`, `MYSQL_ADMIN_PASSWORD_HARDCODED`, or `PMA_MYSQL_HOST_HARDCODED` directly in the script. When these are set, the corresponding command-line arguments can be omitted or left as empty strings.
+
+    Example if `PMA_MYSQL_HOST_HARDCODED` is set in the script:
     ```bash
-    sudo /usr/local/bin/phpmyadmin.sh /var/www/phpmyadmin my.remote.mysql.server MySecureAdminPass123
+    sudo /usr/local/bin/phpmyadmin.sh /var/www/phpmyadmin "" root MySecureRootPass123
     ```
-    (Replace `MySecureAdminPass123` with the actual password for `my_admin_user`.)
+    (Note the empty string `""` for the `MYSQL_HOST` argument, as it's now overridden by the hardcoded variable.)
 
 ### Scheduling with Cron
 
@@ -153,7 +173,7 @@ You can schedule this script to run automatically at regular intervals (e.g., we
 
     **Important Considerations for Cron and Passwords**:
 
-    * If your `MYSQL_ADMIN_PASSWORD` is hardcoded in the script, ensure the script's permissions are strictly set to `600` (`chmod 600`) as mentioned in the "MySQL Administrative User and Password Handling" section.
+    * If your `MYSQL_ADMIN_PASSWORD` is hardcoded in the script (see "Hardcoded Configuration Variables"), ensure the script's permissions are strictly set to `600` (`chmod 600`) as mentioned in that section.
 
     * **Do NOT** include the MySQL administrative password directly in the cron entry. The script's internal password handling (hardcoded in script, environment variable, or interactive prompt) will manage this. Since cron jobs run non-interactively, if the password is not hardcoded or passed via environment variable, the script will **fail** to prompt for it and will abort. Therefore, for cron, either hardcode the password (with strict permissions) or ensure `MYSQL_ADMIN_PASSWORD` is available in the cron job's environment (e.g., by sourcing a file that sets it, though hardcoding in the script is simpler for cron).
 
@@ -175,12 +195,12 @@ The script requires a MySQL user with administrative privileges to perform criti
 The script attempts to obtain the MySQL administrative username and password in the following order of precedence:
 
 **For Username (`MYSQL_ADMIN_USER`):**
-1.  **Hardcoded in the script**: If `MYSQL_ADMIN_USER_HARDCODED` is set at the very top of the script file.
+1.  **Hardcoded in the script**: If `MYSQL_ADMIN_USER_HARDCODED` is set (see "Hardcoded Configuration Variables").
 2.  **Command-line argument**: If provided as the third argument when executing the script.
 3.  **Default**: If not provided by the above methods, it defaults to `root`.
 
 **For Password (`MYSQL_ADMIN_PASSWORD`):**
-1.  **Hardcoded in the script**: If `MYSQL_ADMIN_PASSWORD_HARDCODED` is set at the very top of the script file.
+1.  **Hardcoded in the script**: If `MYSQL_ADMIN_PASSWORD_HARDCODED` is set (see "Hardcoded Configuration Variables").
 2.  **Command-line argument**: If provided as the fourth argument when executing the script.
 3.  **Environment variable**: If the `MYSQL_ADMIN_PASSWORD` environment variable is exported before running the script.
 4.  **Interactive prompt**: If the password is not found through any of the above methods, the script will interactively prompt you to enter it.
@@ -189,7 +209,7 @@ The script attempts to obtain the MySQL administrative username and password in 
 
 ### Security Best Practices for Passwords:
 
-* **Avoid hardcoding in production**: For maximum security, avoid hardcoding passwords directly in the script file.
+* **Avoid hardcoding in production**: For maximum security, avoid hardcoding passwords directly in the script file. If you do, strictly control file permissions.
 
 * **Use environment variables temporarily**: If using environment variables, `unset` them immediately after the script completes to clear them from your shell's environment. The script attempts to `unset` the variable if it sourced it from the environment or interactively.
 
@@ -215,3 +235,4 @@ All script output, including actions performed and any errors encountered, is lo
 `/var/log/update-phpmyadmin.log`
 
 This file is useful for debugging and reviewing the script's execution history.
+л
