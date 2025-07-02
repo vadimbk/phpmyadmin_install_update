@@ -108,7 +108,7 @@ else
         MYSQL_ADMIN_PASSWORD="$4"
         _MYSQL_ADMIN_PASSWORD_ORIGIN_="ARGUMENT"
         log "Using MySQL administrative password from command-line argument."
-    elif [ -n "${MYSQL_ADMIN_PASSWORD}" ]; then # Check environment variable - FIX: Added 'then' keyword
+    elif [ -n "${MYSQL_ADMIN_PASSWORD}" ]; then # Check environment variable
         _MYSQL_ADMIN_PASSWORD_ORIGIN_="ENVIRONMENT"
         log "MYSQL_ADMIN_PASSWORD environment variable is set. Attempting validation."
     else
@@ -247,4 +247,168 @@ else
         log "Warning: SHA256 checksum for $DOWNLOAD_FILE not found in the downloaded file. Proceeding without verification."
     else
         ACTUAL_SHA256=$(sha256sum "$TEMP_DIR/$DOWNLOAD_FILE" | awk '{print $1}')
-        if [ "$EXPECTED_SHA256" = "$ACTUAL_SHA2
+        if [ "$EXPECTED_SHA256" = "$ACTUAL_SHA256" ]; then
+            log "SHA256 checksum verification successful for $DOWNLOAD_FILE."
+        else
+            log "Error: SHA256 checksum mismatch for $DOWNLOAD_FILE! Expected: $EXPECTED_SHA256, Actual: $ACTUAL_SHA256. **SECURITY RISK.** Aborting."
+            rm -rf "$TEMP_DIR"
+            exit 1
+        fi
+    fi
+fi
+
+# Extract the archive
+log "Extracting phpMyAdmin archive..."
+unzip -q "$TEMP_DIR/$DOWNLOAD_FILE" -d "$TEMP_DIR" || { log "Error: Failed to extract phpMyAdmin archive. Aborting."; rm -rf "$TEMP_DIR"; exit 1; }
+
+EXTRACTED_SOURCE_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d -name "phpMyAdmin-$LATEST_VERSION-all-languages*" | head -n 1)
+if [ -z "$EXTRACTED_SOURCE_DIR" ]; then
+    log "Error: Could not find extracted phpMyAdmin directory. Aborting."
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+
+TARGET_CONFIG_FILE="${PMA_DIR}/config.inc.php"
+
+# Atomically replace current installation with the new version
+log "Replacing current phpMyAdmin installation with new version..."
+mv "$EXTRACTED_SOURCE_DIR" "${PMA_DIR}_new" || { log "Error: Failed to move extracted directory to ${PMA_DIR}_new. Aborting."; rm -rf "$TEMP_DIR"; exit 1; }
+
+rm -rf "$PMA_DIR.bak"
+if [ -d "$PMA_DIR" ]; then
+    log "Backing up current phpMyAdmin installation to $PMA_DIR.bak"
+    mv "$PMA_DIR" "$PMA_DIR.bak"
+fi
+log "Moving new phpMyAdmin version into place at $PMA_DIR"
+mv "${PMA_DIR}_new" "$PMA_DIR"
+
+
+# Post-Installation Directory and Permission Setup for 'tmp'
+PMA_TMP_DIR="${PMA_DIR}/tmp"
+
+log "Ensuring phpMyAdmin's 'tmp' directory is correctly set up in the new installation."
+mkdir -p "$PMA_TMP_DIR" || { log "Error: Failed to create temporary directory $PMA_TMP_DIR after installation. Aborting."; rm -rf "$TEMP_DIR"; exit 1; }
+chown "${PMA_USER}:${PMA_GROUP}" "$PMA_TMP_DIR" || { log "Error: Failed to set ownership for $PMA_TMP_DIR after installation. Aborting."; rm -rf "$TEMP_DIR"; exit 1; }
+chmod 777 "$PMA_TMP_DIR" || { log "Error: Failed to set permissions for $PMA_TMP_DIR after installation. Aborting."; rm -rf "$TEMP_DIR"; exit 1; }
+log "phpMyAdmin 'tmp' directory setup complete."
+
+
+# Configuration File Handling
+if [ ! -f "$TARGET_CONFIG_FILE" ]; then
+    log "config.inc.php not found in $PMA_DIR. Creating from sample and applying initial settings."
+    cp "$PMA_DIR/config.sample.inc.php" "$TARGET_CONFIG_FILE"
+    
+    GENERATED_SECRET=$(openssl rand -base64 24) # FIX: Changed from 32 to 24 bytes for 32-char Base64 output
+    sed -i "s|^\(\s*\)\(\$cfg\['blowfish_secret'\] = \)\(.*\)\(;.*$\)|\1\2'${GENERATED_SECRET}';|" "$TARGET_CONFIG_FILE"
+    log "Generated and set blowfish_secret."
+
+    sed -i "s|^\(\s*\)\(\$cfg\['Servers'\]\[\\\$i\]\['host'\] = \)\(.*\)\(;.*$\)|\1\2'${PMA_MYSQL_HOST}';|" "$TARGET_CONFIG_FILE"
+    log "Set MySQL host to '${PMA_MYSQL_HOST}'."
+else
+    log "Existing config.inc.php found. It will be preserved. Checking/updating essential settings."
+    
+    if ! grep -q "\$cfg\['blowfish_secret'\]" "$TARGET_CONFIG_FILE" || \
+       grep -q "^\s*\$cfg\['blowfish_secret'\] = '';" "$TARGET_CONFIG_FILE"; then
+        GENERATED_SECRET=$(openssl rand -base64 24) # FIX: Changed from 32 to 24 bytes for 32-char Base64 output
+        if grep -q "\$cfg\['blowfish_secret'\]" "$TARGET_CONFIG_FILE"; then
+            sed -i "s|^\(\s*\)\(\$cfg\['blowfish_secret'\] = \)\(.*\)\(;.*$\)|\1\2'${GENERATED_SECRET}';|" "$TARGET_CONFIG_FILE"
+            log "Updated empty/existing blowfish_secret in config.inc.php."
+        else
+            sed -i "/\$cfg\['Servers'\]\[\$i\]\['host'\]/a \$cfg['blowfish_secret'] = '${GENERATED_SECRET}';" "$TARGET_CONFIG_FILE"
+            log "Added missing blowfish_secret to existing config.inc.php."
+        fi
+    else
+        log "blowfish_secret already present and set in config.inc.php."
+    fi
+
+    sed -i "s|^\(\s*\)\(\$cfg\['Servers'\]\[\\\$i\]\['host'\] = \)\(.*\)\(;.*$\)|\1\2'${PMA_MYSQL_HOST}';|" "$TARGET_CONFIG_FILE"
+    log "Verified/updated MySQL host in existing config.inc.php to '${PMA_MYSQL_HOST}'."
+fi
+
+
+# MySQL Database and User Setup for phpMyAdmin Control Tables
+log "Starting MySQL database and user setup for phpMyAdmin control tables..."
+
+PMA_CONTROL_PASSWORD=$(openssl rand -base64 24 | head -c 16) 
+log "Generated new password for phpMyAdmin control user (will be applied to MySQL and config)."
+
+DB_EXISTS=$(execute_mysql_query_capture "SHOW DATABASES LIKE '$PMA_CONTROL_DB';" || true)
+if [ -z "$DB_EXISTS" ]; then
+    log "Database '$PMA_CONTROL_DB' does not exist. Creating it."
+    if ! execute_mysql_query "CREATE DATABASE \`$PMA_CONTROL_DB\`;"; then exit 1; fi
+else
+    log "Database '$PMA_CONTROL_DB' already exists."
+fi
+
+USER_EXISTS=$(execute_mysql_query_capture "SELECT user FROM mysql.user WHERE user = '$PMA_CONTROL_USER' AND host = '$PMA_CONTROL_HOST';" || true)
+if [ -z "$USER_EXISTS" ]; then
+    log "User '$PMA_CONTROL_USER'@'$PMA_CONTROL_HOST' does not exist. Creating it with the generated password."
+    if ! execute_mysql_query "CREATE USER '$PMA_CONTROL_USER'@'$PMA_CONTROL_HOST' IDENTIFIED BY '$PMA_CONTROL_PASSWORD';"; then exit 1; fi
+else
+    log "User '$PMA_CONTROL_USER'@'$PMA_CONTROL_HOST' already exists. Updating its password."
+    if ! execute_mysql_query "ALTER USER '$PMA_CONTROL_USER'@'$PMA_CONTROL_HOST' IDENTIFIED BY '$PMA_CONTROL_PASSWORD';"; then exit 1; fi
+fi
+
+log "Granting necessary privileges to '$PMA_CONTROL_USER'@'$PMA_CONTROL_HOST' on database '$PMA_CONTROL_DB'."
+if ! execute_mysql_query "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX ON \`$PMA_CONTROL_DB\`.* TO '$PMA_CONTROL_USER'@'$PMA_CONTROL_HOST';"; then exit 1; fi
+if ! execute_mysql_query "FLUSH PRIVILEGES;"; then exit 1; fi
+log "Privileges granted and flushed."
+
+
+# Import create_tables.sql if phpmyadmin database tables are missing
+PMA_SQL_FILE="$PMA_DIR/sql/create_tables.sql"
+if [ ! -f "$PMA_SQL_FILE" ]; then
+    log "Error: phpMyAdmin SQL file '$PMA_SQL_FILE' not found. Cannot import control tables. Aborting."
+    exit 1
+fi
+
+TABLES_IN_PMA_DB=$(execute_mysql_query_capture "SHOW TABLES FROM \`$PMA_CONTROL_DB\`;" || true)
+if [ -z "$TABLES_IN_PMA_DB" ]; then
+    log "No tables found in '$PMA_CONTROL_DB'. Importing '$PMA_SQL_FILE'."
+    if ! import_mysql_sql_file "$PMA_CONTROL_DB" "$PMA_SQL_FILE"; then exit 1; fi
+else
+    log "Tables already exist in '$PMA_CONTROL_DB'. Skipping import of '$PMA_SQL_FILE'."
+fi
+
+# Update config.inc.php with control user settings
+log "Updating '$TARGET_CONFIG_FILE' with phpMyAdmin control user and database settings."
+
+sed -i "s|^\(\s*\)\(\$cfg\['Servers'\]\[\$i\]\['pmadb'\] = \)\(.*\)\(;.*$\)|\1\2'$PMA_CONTROL_DB';|" "$TARGET_CONFIG_FILE"
+sed -i "s|^\(\s*\)\(\$cfg\['Servers'\]\[\$i\]\['controluser'\] = \)\(.*\)\(;.*$\)|\1\2'$PMA_CONTROL_USER';|" "$TARGET_CONFIG_FILE"
+sed -i "s|^\(\s*\)\(\$cfg\['Servers'\]\[\$i\]\['controlpass'\] = \)\(.*\)\(;.*$\)|\1\2'$PMA_CONTROL_PASSWORD';|" "$TARGET_CONFIG_FILE"
+
+PMA_TABLE_KEYS=(
+    "bookmarktable" "relation" "table_info" "table_coords" "pdf_pages"
+    "column_info" "history" "recent" "favorite" "users" "usergroups"
+    "navigationhiding" "savedsearches" "central_columns" "designer_coords"
+    "tracking" "userconfig"
+)
+
+for table_key in "${PMA_TABLE_KEYS[@]}"; do
+    sed -i "s|^\(\s*\)//\s*\(\$cfg\['Servers'\]\[\$i\]\['$table_key'\]\s*=\s*'.*'[^;]*;\s*\)|\1\2|" "$TARGET_CONFIG_FILE"
+done
+
+log "phpMyAdmin control user and database settings applied to '$TARGET_CONFIG_FILE'."
+
+# Final Ownership and Permissions for the entire phpMyAdmin directory
+log "Setting final ownership and permissions for the entire "$PMA_DIR"..."
+chown -R "${PMA_USER}:${PMA_GROUP}" "$PMA_DIR"
+find "$PMA_DIR" -type d -exec chmod 755 {} +
+find "$PMA_DIR" -type f -exec chmod 644 {} +
+
+echo "$LATEST_VERSION" | tee "$PMA_DIR/VERSION" > /dev/null
+
+log "phpMyAdmin "$LATEST_VERSION" successfully installed/updated and configured."
+
+# --- Cleanup ---
+log "Cleaning up temporary directory: "$TEMP_DIR" and old backup: "$PMA_DIR".bak"
+rm -rf "$TEMP_DIR"
+rm -rf "$PMA_DIR.bak"
+
+# Unset MYSQL_ADMIN_PASSWORD if it was not hardcoded in script or passed as argument
+if [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "ENVIRONMENT" ] || [ "$_MYSQL_ADMIN_PASSWORD_ORIGIN_" == "INTERACTIVE" ]; then
+    unset MYSQL_ADMIN_PASSWORD
+    log "MYSQL_ADMIN_PASSWORD unset for this script's environment."
+fi
+
+log "--- phpMyAdmin update script finished ---"
