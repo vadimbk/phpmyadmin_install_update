@@ -10,6 +10,12 @@
 MYSQL_ADMIN_USER_HARDCODED="" # Set your admin username here, e.g., "my_mysql_admin". Leave empty if you don't want to hardcode.
 MYSQL_ADMIN_PASSWORD_HARDCODED="" # Set your admin password here, e.g., "myStrongAdminPass".
 
+# --- phpMyAdmin MySQL Host (Optional Hardcoded Variable) ---
+# If you want to hardcode the MySQL host directly in this script,
+# uncomment the line below and replace with your actual MySQL host.
+# This will override any host provided via command-line argument.
+PMA_MYSQL_HOST_HARDCODED="" # Set your MySQL host here, e.g., "192.168.1.100" or "db.example.com".
+
 
 # Configuration variables
 PMA_DIR_DEFAULT="/var/www/phpmyadmin"
@@ -119,11 +125,17 @@ fi
 
 
 PMA_DIR="${1:-$PMA_DIR_DEFAULT}"
-PMA_MYSQL_HOST="localhost" # Default MySQL host for phpMyAdmin connection and admin user connection
 
-if [ -n "$2" ]; then
+# Determine PMA_MYSQL_HOST: Hardcoded variable > Argument 2 > Default localhost
+if [ -n "${PMA_MYSQL_HOST_HARDCODED}" ]; then
+    PMA_MYSQL_HOST="${PMA_MYSQL_HOST_HARDCODED}"
+    log "Using hardcoded phpMyAdmin MySQL host from script variable: ${PMA_MYSQL_HOST}."
+elif [ -n "$2" ]; then
     PMA_MYSQL_HOST="$2"
     log "Using provided MySQL host parameter: $PMA_MYSQL_HOST"
+else
+    PMA_MYSQL_HOST="localhost" # Default MySQL host for phpMyAdmin connection and admin user connection
+    log "MySQL host not specified, defaulting to: ${PMA_MYSQL_HOST}."
 fi
 
 
